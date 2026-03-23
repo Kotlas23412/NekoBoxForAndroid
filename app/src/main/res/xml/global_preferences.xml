@@ -205,7 +205,11 @@
             app:summary="@string/allow_access_sum"
             app:title="@string/allow_access" />
     </PreferenceCategory>
-
+    <Preference
+        android:key="github_export_settings"
+        android:title="@string/github_export_title"
+        android:icon="@drawable/ic_file_file_upload"
+        android:fragment="io.nekohasekai.sagernet.ui.GitHubExportSettingsFragment" />
     <PreferenceCategory app:title="@string/cag_misc">
         <moe.matsuri.nb4a.ui.UrlTestPreference
             app:defaultValue="http://cp.cloudflare.com/"
@@ -246,4 +250,5 @@
             app:key="showBottomBar"
             app:title="@string/show_bottom_bar" />
     </PreferenceCategory>
+
 </PreferenceScreen>

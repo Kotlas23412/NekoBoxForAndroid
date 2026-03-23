@@ -1,4 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
-  
-</androidx.preference.PreferenceScreen>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:title="@string/github_export_title">
+
+    <EditTextPreference
+        android:key="github_token"
+        android:title="@string/github_token_title"
+        android:summary="@string/github_token_summary"
+        app:useSimpleSummaryProvider="true"
+        android:icon="@drawable/ic_baseline_vpn_key_24"/>
+
+    <EditTextPreference
+        android:key="github_repo"
+        android:title="@string/github_repo_title"
+        android:summary="@string/github_repo_summary"
+        app:useSimpleSummaryProvider="true"
+        android:icon="@drawable/ic_baseline_domain_24"/>
+
+    <EditTextPreference
+        android:key="github_file_path"
+        android:title="@string/github_path_title"
+        android:summary="@string/github_path_summary"
+        app:useSimpleSummaryProvider="true"
+        android:icon="@drawable/ic_action_description"/>
+
+    <EditTextPreference
+        android:key="github_export_limit"
+        android:title="@string/github_limit_title"
+        android:summary="@string/github_limit_summary"
+        app:useSimpleSummaryProvider="true"
+        android:defaultValue="10"
+        android:inputType="number"
+        android:icon="@drawable/ic_baseline_format_align_left_24"/>
+
+</PreferenceScreen>

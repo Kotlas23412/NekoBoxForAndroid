@@ -116,6 +116,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.ZipInputStream
 import io.nekohasekai.sagernet.bg.proto.FullTestInstance
 import io.nekohasekai.sagernet.bg.proto.FullTestResult
+import io.nekohasekai.sagernet.utils.GitHubExporter
 
 class ConfigurationFragment @JvmOverloads constructor(
     val select: Boolean = false, val selectedItem: ProxyEntity? = null, val titleRes: Int = 0
@@ -594,6 +595,13 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
             R.id.action_full_https_test -> {
                 fullHttpsTest()
+            }
+            R.id.action_github_auto_url -> {
+                runGithubAutoExport(useHttpsTest = false)
+            }
+
+            R.id.action_github_auto_https -> {
+                runGithubAutoExport(useHttpsTest = true)
             }
         }
         return true
@@ -1820,5 +1828,139 @@ class ConfigurationFragment @JvmOverloads constructor(
         searchView.onActionViewCollapsed()
         searchView.clearFocus()
     }
+    @OptIn(DelicateCoroutinesApi::class)
+    fun runGithubAutoExport(useHttpsTest: Boolean) {
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        }
+        DataStore.runningTest = true
 
+        val test = TestDialog()
+        val dialog = test.builder.show()
+        val testJobs = mutableListOf<Job>()
+        val group = DataStore.currentGroup()
+
+        // 1. Показываем уведомление, что начали
+        test.notification = ConnectionTestNotification(
+            requireContext(),
+            "[${group.displayName()}] ${getString(R.string.github_export_running)}"
+        )
+
+        val mainJob = runOnDefaultDispatcher {
+            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+            test.proxyN = profilesList.size
+            val profiles = ConcurrentLinkedQueue(profilesList)
+
+            // 2. Тестируем все прокси в группе
+            repeat(DataStore.connectionTestConcurrent) {
+                testJobs.add(launch(Dispatchers.IO) {
+                    val urlTest = if (!useHttpsTest) UrlTest() else null
+
+                    while (isActive) {
+                        val profile = profiles.poll() ?: break
+                        profile.status = 0
+
+                        try {
+                            if (useHttpsTest) {
+                                // Хардкорный HTTPS тест
+                                val result = FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
+                                if (result.success) {
+                                    profile.status = 1
+                                    profile.ping = result.bestLatencyMs.toInt()
+                                    profile.error = null
+                                } else {
+                                    profile.status = 3
+                                    profile.error = result.error ?: "HTTPS failed"
+                                }
+                            } else {
+                                // Обычный URL тест
+                                val result = urlTest!!.doTest(profile)
+                                profile.status = 1
+                                profile.ping = result
+                                profile.error = null
+                            }
+                        } catch (e: Exception) {
+                            profile.status = 3
+                            profile.error = e.readableMessage
+                        }
+
+                        test.update(profile)
+                    }
+                })
+            }
+
+            // Ждем завершения всех тестов
+            testJobs.joinAll()
+
+            // 3. Отбираем лучшие прокси
+            val limit = DataStore.githubExportLimit
+            val testedProfiles = test.results.toList()
+
+            // Сортируем: только успешные (status == 1), сортировка по пингу (от меньшего к большему)
+            val bestProxies = testedProfiles
+                .filter { it.status == 1 }
+                .sortedBy { it.ping }
+                .take(limit)
+
+            runOnMainDispatcher {
+                test.dialogStatus.set(2)
+                dialog.dismiss()
+
+                if (bestProxies.isEmpty()) {
+                    DataStore.runningTest = false
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Экспорт отменён")
+                        .setMessage("Нет ни одного рабочего прокси для экспорта!")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                    return@runOnMainDispatcher
+                }
+
+                // 4. Отправляем на GitHub!
+                val progressDialog = MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Выгрузка на GitHub")
+                    .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
+                    .setCancelable(false)
+                    .show()
+
+                runOnDefaultDispatcher {
+                    // Обновляем статусы в базе данных локально
+                    test.results.forEach {
+                        try { ProfileManager.updateProfile(it) } catch (e: Exception) { Logs.w(e) }
+                    }
+                    GroupManager.postReload(DataStore.currentGroupId())
+
+                    // Делаем экспорт
+                    val result = GitHubExporter.exportGroup(group.displayName(), bestProxies)
+
+                    DataStore.runningTest = false
+
+                    runOnMainDispatcher {
+                        progressDialog.dismiss()
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                            .setMessage(result.message)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                }
+            }
+        }
+
+        test.cancel = {
+            test.dialogStatus.set(2)
+            dialog.dismiss()
+            runOnDefaultDispatcher {
+                mainJob.cancel()
+                testJobs.forEach { it.cancel() }
+                DataStore.runningTest = false
+            }
+        }
+
+        test.minimize = {
+            test.dialogStatus.set(1)
+            dialog.hide()
+        }
+    }
 }

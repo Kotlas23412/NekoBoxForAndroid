@@ -20,6 +20,7 @@ import io.nekohasekai.sagernet.ktx.string
 import io.nekohasekai.sagernet.ktx.stringToInt
 import io.nekohasekai.sagernet.ktx.stringToIntIfExists
 import moe.matsuri.nb4a.TempDatabase
+import androidx.core.content.edit
 
 object DataStore : OnPreferenceDataStoreChangeListener {
 
@@ -41,7 +42,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var baseService: BaseService.Interface? = null
 
     // main
-
     var runningTest = false
 
     fun currentGroupId(): Long {
@@ -92,8 +92,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var networkChangeResetConnections by configurationStore.boolean(Key.NETWORK_CHANGE_RESET_CONNECTIONS) { true }
     var wakeResetConnections by configurationStore.boolean(Key.WAKE_RESET_CONNECTIONS)
 
-    //
-
     var isExpert by configurationStore.boolean(Key.APP_EXPERT)
     var appTheme by configurationStore.int(Key.APP_THEME)
     var nightTheme by configurationStore.stringToInt(Key.NIGHT_THEME)
@@ -123,7 +121,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var logBufSize by configurationStore.int(Key.LOG_BUF_SIZE) { 0 }
     var acquireWakeLock by configurationStore.boolean(Key.ACQUIRE_WAKE_LOCK)
 
-    // hopefully hashCode = mHandle doesn't change, currently this is true from KitKat to Nougat
     private val userIndex by lazy { Binder.getCallingUserHandle().hashCode() }
     var mixedPort: Int
         get() = getLocalPort(Key.MIXED_PORT, 2080)
@@ -134,7 +131,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
             mixedPort = mixedPort
         }
     }
-
 
     private fun getLocalPort(key: String, default: Int): Int {
         return parsePort(configurationStore.getString(key), default + userIndex)
@@ -164,11 +160,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
 
     var yacdURL by configurationStore.string("yacdURL") { "http://127.0.0.1:9090/ui" }
 
-    // protocol
-
     var globalAllowInsecure by configurationStore.boolean(Key.GLOBAL_ALLOW_INSECURE) { false }
-
-    // old cache, DO NOT ADD
 
     var dirty by profileCacheStore.boolean(Key.PROFILE_DIRTY)
     var editingId by profileCacheStore.long(Key.PROFILE_ID)
@@ -206,7 +198,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var serverDisableMtuDiscovery by profileCacheStore.boolean(Key.SERVER_DISABLE_MTU_DISCOVERY)
     var serverHopInterval by profileCacheStore.stringToInt(Key.SERVER_HOP_INTERVAL) { 10 }
 
-    var protocolVersion by profileCacheStore.stringToInt(Key.PROTOCOL_VERSION) { 2 } // default is SOCKS5
+    var protocolVersion by profileCacheStore.stringToInt(Key.PROTOCOL_VERSION) { 2 }
 
     var serverProtocolInt by profileCacheStore.stringToInt(Key.SERVER_PROTOCOL)
     var serverPrivateKey by profileCacheStore.string(Key.SERVER_PRIVATE_KEY)
@@ -255,4 +247,46 @@ object DataStore : OnPreferenceDataStoreChangeListener {
 
     override fun onPreferenceDataStoreChanged(store: PreferenceDataStore, key: String) {
     }
+
+    // =======================================================
+    // GITHUB EXPORT SETTINGS
+    // =======================================================
+    private val githubPrefs by lazy {
+        io.nekohasekai.sagernet.SagerNet.application.getSharedPreferences(
+            "github_prefs",
+            android.content.Context.MODE_PRIVATE
+        )
+    }
+
+    var githubToken: String
+        get() = githubPrefs.getString("github_token", "") ?: ""
+        set(value) {
+            githubPrefs.edit {
+                putString("github_token", value)
+            }
+        }
+
+    var githubRepo: String
+        get() = githubPrefs.getString("github_repo", "") ?: ""
+        set(value) {
+            githubPrefs.edit {
+                putString("github_repo", value)
+            }
+        }
+
+    var githubFilePath: String
+        get() = githubPrefs.getString("github_file_path", "") ?: ""
+        set(value) {
+            githubPrefs.edit {
+                putString("github_file_path", value)
+            }
+        }
+
+    var githubExportLimit: Int
+        get() = githubPrefs.getInt("github_export_limit", 10)
+        set(value) {
+            githubPrefs.edit {
+                putInt("github_export_limit", value)
+            }
+        }
 }

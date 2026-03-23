@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android"
+<menu xmlns:tools="http://schemas.android.com/tools"
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/action_search"
@@ -104,6 +105,12 @@
             <item
                 android:id="@+id/action_full_https_test"
                 android:title="@string/full_https_test" />
+            <item
+                android:id="@+id/action_github_auto_url"
+                android:title="@string/github_export_auto_url_test" />
+            <item
+                android:id="@+id/action_github_auto_https"
+                android:title="@string/github_export_auto_https_test" />
             <item
                 android:id="@+id/action_connection_test_clear_results"
                 android:title="@string/connection_test_clear_results" />

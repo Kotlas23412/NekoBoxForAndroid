@@ -582,4 +582,23 @@
     <string name="full_https_test">Full HTTPS Test</string>
     <string name="full_test_results">Full Test Results</string>
     <string name="full_test_running">Full Test Running</string>
+    <!-- GitHub Export Settings -->
+    <string name="github_export_title">Экспорт на GitHub</string>
+    <string name="github_token_title">GitHub Token</string>
+    <string name="github_token_summary">Personal Access Token (classic) с правами на repo</string>
+    <string name="github_repo_title">Репозиторий (Repo)</string>
+    <string name="github_repo_summary">В формате: Username/RepoName (например: Kkotl/MyProxies)</string>
+    <string name="github_path_title">Путь к файлу (File Path)</string>
+    <string name="github_path_summary">В формате: path/to/file.txt (например: sub/vless.txt)</string>
+    <string name="github_limit_title">Лимит отправки прокси</string>
+    <string name="github_limit_summary">Сколько лучших прокси по пингу отправлять</string>
+    <!-- GitHub Export Buttons -->
+    <string name="github_export_menu_title">Экспорт на GitHub</string>
+    <string name="github_export_auto_url_test">Авто (URL-тест) и Экспорт</string>
+    <string name="github_export_auto_https_test">Авто (HTTPS-тест) и Экспорт</string>
+    <string name="github_export_selected">Экспорт выбранных...</string>
+    <string name="github_export_by_country">Экспорт по странам...</string>
+    <string name="github_export_running">Тестирование и выгрузка на GitHub...</string>
+    <string name="github_export_success">Успешная выгрузка!</string>
+    <string name="github_export_failed">Ошибка выгрузки: %s</string>
 </resources>
