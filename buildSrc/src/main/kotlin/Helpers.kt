@@ -138,6 +138,20 @@ fun Project.setupAppCommon() {
             }
         }
     }
+
+    afterEvaluate {
+        val appExt = extensions.getByName<ApplicationExtension>("android")
+        val externalOverride = appExt.signingConfigs.findByName("externalOverride")
+        val hasExternalStoreFile = externalOverride?.storeFile?.exists() == true
+
+        if (externalOverride != null && !hasExternalStoreFile) {
+            appExt.buildTypes.getByName("release").signingConfig = null
+            logger.warn(
+                "Ignore invalid signingConfig 'externalOverride': keystore not found " +
+                        "(${externalOverride.storeFile}). Building unsigned release."
+            )
+        }
+    }
 }
 
 fun Project.setupApp() {

@@ -526,7 +526,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -578,7 +578,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -1871,102 +1871,117 @@ class ConfigurationFragment @JvmOverloads constructor(
         )
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
 
-            // 2. Тестируем все прокси в группе
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    val urlTest = if (!useHttpsTest) UrlTest() else null
+                // 2. Тестируем все прокси в группе
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        val urlTest = if (!useHttpsTest) UrlTest() else null
 
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
-                        profile.status = 0
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
+                            profile.status = 0
 
-                        try {
-                            if (useHttpsTest) {
-                                // Хардкорный HTTPS тест
-                                val result = FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
-                                if (result.success) {
-                                    profile.status = 1
-                                    profile.ping = result.bestLatencyMs.toInt()
-                                    profile.error = null
+                            try {
+                                if (useHttpsTest) {
+                                    // Хардкорный HTTPS тест
+                                    val result =
+                                        FullTestInstance(profile, timeout = 15000, minOk = 2).doTest()
+                                    if (result.success) {
+                                        profile.status = 1
+                                        profile.ping = result.bestLatencyMs.toInt()
+                                        profile.error = null
+                                    } else {
+                                        profile.status = 3
+                                        profile.error = result.error ?: "HTTPS failed"
+                                    }
                                 } else {
-                                    profile.status = 3
-                                    profile.error = result.error ?: "HTTPS failed"
+                                    // Обычный URL тест
+                                    val result = urlTest!!.doTest(profile)
+                                    profile.status = 1
+                                    profile.ping = result
+                                    profile.error = null
                                 }
-                            } else {
-                                // Обычный URL тест
-                                val result = urlTest!!.doTest(profile)
-                                profile.status = 1
-                                profile.ping = result
-                                profile.error = null
+                            } catch (e: Exception) {
+                                profile.status = 3
+                                profile.error = e.readableMessage
                             }
-                        } catch (e: Exception) {
-                            profile.status = 3
-                            profile.error = e.readableMessage
+
+                            test.update(profile)
                         }
+                    })
+                }
 
-                        test.update(profile)
-                    }
-                })
-            }
+                // Ждем завершения всех тестов
+                testJobs.joinAll()
 
-            // Ждем завершения всех тестов
-            testJobs.joinAll()
+                // 3. Отбираем лучшие прокси
+                val limit = DataStore.githubExportLimit
+                val testedProfiles = test.results.toList()
 
-            // 3. Отбираем лучшие прокси
-            val limit = DataStore.githubExportLimit
-            val testedProfiles = test.results.toList()
+                // Сортируем: только успешные (status == 1), сортировка по пингу (от меньшего к большему)
+                val bestProxies = testedProfiles
+                    .filter { it.status == 1 }
+                    .sortedBy { it.ping }
+                    .take(limit)
 
-            // Сортируем: только успешные (status == 1), сортировка по пингу (от меньшего к большему)
-            val bestProxies = testedProfiles
-                .filter { it.status == 1 }
-                .sortedBy { it.ping }
-                .take(limit)
-
-            runOnMainDispatcher {
-                test.dialogStatus.set(2)
-                dialog.dismiss()
+                onMainDispatcher {
+                    test.dialogStatus.set(2)
+                    dialog.dismiss()
+                }
 
                 if (bestProxies.isEmpty()) {
                     DataStore.runningTest = false
-                    MaterialAlertDialogBuilder(requireContext())
-                        .setTitle("Экспорт отменён")
-                        .setMessage("Нет ни одного рабочего прокси для экспорта!")
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                    return@runOnMainDispatcher
-                }
-
-                // 4. Отправляем на GitHub!
-                val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выгрузка на GitHub")
-                    .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
-                    .setCancelable(false)
-                    .show()
-
-                runOnDefaultDispatcher {
-                    // Обновляем статусы в базе данных локально
-                    test.results.forEach {
-                        try { ProfileManager.updateProfile(it) } catch (e: Exception) { Logs.w(e) }
-                    }
-                    GroupManager.postReload(DataStore.currentGroupId())
-
-                    // Делаем экспорт
-                    val result = GitHubExporter.exportGroup(group.displayName(), bestProxies)
-
-                    DataStore.runningTest = false
-
-                    runOnMainDispatcher {
-                        progressDialog.dismiss()
+                    onMainDispatcher {
                         MaterialAlertDialogBuilder(requireContext())
-                            .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                            .setMessage(result.message)
+                            .setTitle("Экспорт отменён")
+                            .setMessage("Нет ни одного рабочего прокси для экспорта!")
                             .setPositiveButton(android.R.string.ok, null)
                             .show()
                     }
+                    return@runOnDefaultDispatcher
+                }
+
+                // 4. Отправляем на GitHub!
+                val progressDialog = onMainDispatcher {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Выгрузка на GitHub")
+                        .setMessage("Отправляем ${bestProxies.size} лучших прокси...")
+                        .setCancelable(false)
+                        .show()
+                }
+
+                // Обновляем статусы в базе данных локально
+                test.results.forEach {
+                    try {
+                        ProfileManager.updateProfile(it)
+                    } catch (e: Exception) {
+                        Logs.w(e)
+                    }
+                }
+                GroupManager.postReload(DataStore.currentGroupId())
+
+                // Делаем экспорт
+                val result = GitHubExporter.exportGroup(group.displayName(), bestProxies)
+                DataStore.runningTest = false
+
+                onMainDispatcher {
+                    progressDialog.dismiss()
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                        .setMessage(result.message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("AutoPilot ошибка: ${e.readableMessage}").show()
                 }
             }
         }
@@ -2022,26 +2037,12 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                         if (selectedProxies.isEmpty()) {
                             snackbar("Вы ничего не выбрали!").show()
-                            return@setPositiveButton
-                        }
-
-                        // Запускаем процесс отправки
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${selectedProxies.size} прокси...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            val result = GitHubExporter.exportGroup(group.displayName(), selectedProxies)
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
+                        } else {
+                            exportMultipleGroups(
+                                group.displayName(),
+                                selectedProxies,
+                                "Отправляем ${selectedProxies.size} прокси..."
+                            )
                         }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -2100,28 +2101,38 @@ class ConfigurationFragment @JvmOverloads constructor(
                         val selectedCountry = countryNames[which]
                         val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
 
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${proxiesToExport.size} прокси ($selectedCountry)...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            // Формируем уникальное имя для блока в файле
-                            val blockName = "${group.displayName()} - $selectedCountry"
-                            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
-
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
-                        }
+                        val blockName = "${group.displayName()} - $selectedCountry"
+                        exportMultipleGroups(
+                            blockName,
+                            proxiesToExport,
+                            "Отправляем ${proxiesToExport.size} прокси ($selectedCountry)..."
+                        )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun exportMultipleGroups(
+        blockName: String,
+        proxiesToExport: List<ProxyEntity>,
+        progressMessage: String
+    ) {
+        val progressDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Выгрузка на GitHub")
+            .setMessage(progressMessage)
+            .setCancelable(false)
+            .show()
+
+        runOnDefaultDispatcher {
+            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
+            runOnMainDispatcher {
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                    .setMessage(result.message)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
         }
