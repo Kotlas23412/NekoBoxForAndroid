@@ -526,7 +526,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -578,7 +578,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
