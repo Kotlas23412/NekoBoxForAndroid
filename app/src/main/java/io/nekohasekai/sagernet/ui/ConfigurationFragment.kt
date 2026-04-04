@@ -724,6 +724,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
+
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
@@ -875,10 +876,9 @@ class ConfigurationFragment @JvmOverloads constructor(
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-                test.proxyN = profilesList.size
-                val profiles = ConcurrentLinkedQueue(profilesList)
+            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+            test.proxyN = profilesList.size
+            val profiles = ConcurrentLinkedQueue(profilesList)
             repeat(DataStore.connectionTestConcurrent) {
                 testJobs.add(launch(Dispatchers.IO) {
                     val urlTest = UrlTest() // note: this is NOT in bg process
@@ -909,6 +909,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 test.cancel()
             }
         }
+
         test.cancel = {
             test.dialogStatus.set(2)
             dialog.dismiss()
@@ -945,10 +946,9 @@ class ConfigurationFragment @JvmOverloads constructor(
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            try {
-                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
-                test.proxyN = profilesList.size
-                val profiles = ConcurrentLinkedQueue(profilesList)
+            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
+            test.proxyN = profilesList.size
+            val profiles = ConcurrentLinkedQueue(profilesList)
             repeat(DataStore.connectionTestConcurrent) {
                 testJobs.add(launch(Dispatchers.IO) {
                     while (isActive) {
@@ -989,6 +989,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                 test.cancel()
             }
         }
+
         test.cancel = {
             test.dialogStatus.set(2)
             dialog.dismiss()
@@ -1015,6 +1016,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
+
     inner class GroupPagerAdapter : FragmentStateAdapter(this),
         ProfileManager.Listener,
         GroupManager.Listener {
@@ -1853,6 +1855,7 @@ class ConfigurationFragment @JvmOverloads constructor(
         searchView.onActionViewCollapsed()
         searchView.clearFocus()
     }
+
     @OptIn(DelicateCoroutinesApi::class)
     fun runGithubAutoExport(useHttpsTest: Boolean) {
         if (DataStore.runningTest) {
@@ -2003,6 +2006,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             dialog.hide()
         }
     }
+
     fun runGithubExportSelected() {
         val group = DataStore.currentGroup()
 
@@ -2052,6 +2056,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
+
     fun runGithubExportByCountry() {
         val group = DataStore.currentGroup()
 
