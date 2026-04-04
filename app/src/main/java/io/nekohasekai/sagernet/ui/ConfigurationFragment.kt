@@ -443,12 +443,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             R.id.action_new_config -> {
                 startActivity(Intent(requireActivity(), ConfigSettingActivity::class.java))
             }
-            R.id.action_github_export_selected -> {
-                runGithubExportSelected()
-            }
-            R.id.action_github_export_country -> {
-                runGithubExportByCountry()
-            }
+
             R.id.action_new_chain -> {
                 startActivity(Intent(requireActivity(), ChainSettingsActivity::class.java))
             }
@@ -614,37 +609,12 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     inner class TestDialog {
         val binding = LayoutProgressListBinding.inflate(layoutInflater)
-
-        // ===== ДОБАВЛЕНО: Блокировка сна (WakeLock) =====
-        private val wakeLock = try {
-            val pm = requireContext().getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            // PARTIAL_WAKE_LOCK заставляет процессор работать даже при выключенном экране
-            val wl = pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "NekoBox:TestWakeLock")
-            wl.acquire(30 * 60 * 1000L) // Защита от вечного зависания: максимум 30 минут
-            wl
-        } catch (e: Exception) {
-            null
-        }
-
-        private fun releaseWakeLock() {
-            try {
-                if (wakeLock?.isHeld == true) {
-                    wakeLock.release()
-                }
-            } catch (e: Exception) {}
-        }
-        // ================================================
-
         val builder = MaterialAlertDialogBuilder(requireContext()).setView(binding.root)
             .setPositiveButton(R.string.minimize) { _, _ ->
                 minimize()
             }
             .setNegativeButton(android.R.string.cancel) { _, _ ->
                 cancel()
-            }
-            .setOnDismissListener {
-                // Гарантированно отпускаем блокировку, когда тест завершен или отменен
-                releaseWakeLock()
             }
             .setCancelable(false)
 
@@ -674,6 +644,8 @@ class ConfigurationFragment @JvmOverloads constructor(
                 if (status >= 1) return@runOnMainDispatcher
                 if (!isAdded) return@runOnMainDispatcher
 
+                // refresh dialog
+
                 var profileStatusText: String? = null
                 var profileStatusColor = 0
 
@@ -682,18 +654,22 @@ class ConfigurationFragment @JvmOverloads constructor(
                         profileStatusText = profile.error
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
+
                     0 -> {
                         profileStatusText = getString(R.string.connection_test_testing)
                         profileStatusColor = context.getColorAttr(android.R.attr.textColorSecondary)
                     }
+
                     1 -> {
                         profileStatusText = getString(R.string.available, profile.ping)
                         profileStatusColor = context.getColour(R.color.material_green_500)
                     }
+
                     2 -> {
                         profileStatusText = profile.error
                         profileStatusColor = context.getColour(R.color.material_red_500)
                     }
+
                     3 -> {
                         val err = profile.error ?: ""
                         val msg = Protocols.genFriendlyMsg(err)
@@ -724,6 +700,7 @@ class ConfigurationFragment @JvmOverloads constructor(
             }
         }
     }
+
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
@@ -1984,146 +1961,6 @@ class ConfigurationFragment @JvmOverloads constructor(
         test.minimize = {
             test.dialogStatus.set(1)
             dialog.hide()
-        }
-    }
-    fun runGithubExportSelected() {
-        val group = DataStore.currentGroup()
-
-        runOnDefaultDispatcher {
-            // Получаем все прокси из текущей группы
-            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
-                .sortedBy { it.displayName() } // Сортируем по имени для удобства
-
-            if (allProxies.isEmpty()) {
-                onMainDispatcher {
-                    snackbar("В этой группе нет прокси!").show()
-                }
-                return@runOnDefaultDispatcher
-            }
-
-            // Массивы для диалога
-            val proxyNames = allProxies.map { it.displayName() }.toTypedArray()
-            val checkedItems = BooleanArray(allProxies.size) { false }
-            val selectedProxies = mutableListOf<ProxyEntity>()
-
-            onMainDispatcher {
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выберите прокси для экспорта")
-                    .setMultiChoiceItems(proxyNames, checkedItems) { _, which, isChecked ->
-                        checkedItems[which] = isChecked
-                    }
-                    .setPositiveButton("Экспорт") { _, _ ->
-                        // Собираем выбранные
-                        for (i in checkedItems.indices) {
-                            if (checkedItems[i]) {
-                                selectedProxies.add(allProxies[i])
-                            }
-                        }
-
-                        if (selectedProxies.isEmpty()) {
-                            snackbar("Вы ничего не выбрали!").show()
-                            return@setPositiveButton
-                        }
-
-                        // Запускаем процесс отправки
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${selectedProxies.size} прокси...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            val result = GitHubExporter.exportGroup(group.displayName(), selectedProxies)
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
-                        }
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
-            }
-        }
-    }
-    fun runGithubExportByCountry() {
-        val group = DataStore.currentGroup()
-
-        runOnDefaultDispatcher {
-            val allProxies = SagerDatabase.proxyDao.getByGroup(group.id)
-
-            if (allProxies.isEmpty()) {
-                onMainDispatcher { snackbar("В этой группе нет прокси!").show() }
-                return@runOnDefaultDispatcher
-            }
-
-            // Группируем прокси по странам.
-            // Мы ищем Эмодзи-флаги (например 🇩🇪) или буквенные коды (DE, US) в названии
-            val countryMap = mutableMapOf<String, MutableList<ProxyEntity>>()
-
-            // Регулярное выражение для поиска эмодзи-флагов
-            val flagRegex = Regex("[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]")
-
-            for (proxy in allProxies) {
-                val name = proxy.displayName()
-
-                // Пытаемся найти флаг
-                val flagMatch = flagRegex.find(name)
-                val countryKey = if (flagMatch != null) {
-                    // Если есть флаг — берем его и следующее слово (если есть)
-                    val flag = flagMatch.value
-                    // Попытка выцепить слово после флага (например "Германия")
-                    val afterFlag = name.substringAfter(flag).trim().split(" ").firstOrNull()?.replace(Regex("[^\\p{L}]"), "") ?: ""
-                    if (afterFlag.length > 2) "$flag $afterFlag" else flag
-                } else {
-                    // Если флага нет, берем первое длинное слово в надежде, что это страна
-                    val words = name.split(" ", "-", "_")
-                    val possibleCountry = words.find { it.length > 2 && !it.contains(Regex("\\d")) }
-                    possibleCountry ?: "Неизвестно"
-                }
-
-                if (!countryMap.containsKey(countryKey)) {
-                    countryMap[countryKey] = mutableListOf()
-                }
-                countryMap[countryKey]?.add(proxy)
-            }
-
-            val countryNames = countryMap.keys.toTypedArray()
-
-            onMainDispatcher {
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Выберите страну для экспорта")
-                    .setItems(countryNames) { _, which ->
-                        val selectedCountry = countryNames[which]
-                        val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
-
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${proxiesToExport.size} прокси ($selectedCountry)...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            // Формируем уникальное имя для блока в файле
-                            val blockName = "${group.displayName()} - $selectedCountry"
-                            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
-
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
-                        }
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
-            }
         }
     }
 }
