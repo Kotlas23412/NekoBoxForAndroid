@@ -526,7 +526,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -578,7 +578,7 @@ class ConfigurationFragment @JvmOverloads constructor(
                                     }
                                     runOnDefaultDispatcher {
                                         for (profile in toClear) {
-                                            ProfileManager.deleteProfile2(
+                                            ProfileManager.deleteProfile(
                                                 profile.groupId, profile.id
                                             )
                                         }
@@ -2022,26 +2022,12 @@ class ConfigurationFragment @JvmOverloads constructor(
 
                         if (selectedProxies.isEmpty()) {
                             snackbar("Вы ничего не выбрали!").show()
-                            return@setPositiveButton
-                        }
-
-                        // Запускаем процесс отправки
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${selectedProxies.size} прокси...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            val result = GitHubExporter.exportGroup(group.displayName(), selectedProxies)
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
+                        } else {
+                            exportMultipleGroups(
+                                group.displayName(),
+                                selectedProxies,
+                                "Отправляем ${selectedProxies.size} прокси..."
+                            )
                         }
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -2100,28 +2086,38 @@ class ConfigurationFragment @JvmOverloads constructor(
                         val selectedCountry = countryNames[which]
                         val proxiesToExport = countryMap[selectedCountry] ?: return@setItems
 
-                        val progressDialog = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Выгрузка на GitHub")
-                            .setMessage("Отправляем ${proxiesToExport.size} прокси ($selectedCountry)...")
-                            .setCancelable(false)
-                            .show()
-
-                        runOnDefaultDispatcher {
-                            // Формируем уникальное имя для блока в файле
-                            val blockName = "${group.displayName()} - $selectedCountry"
-                            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
-
-                            runOnMainDispatcher {
-                                progressDialog.dismiss()
-                                MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
-                                    .setMessage(result.message)
-                                    .setPositiveButton(android.R.string.ok, null)
-                                    .show()
-                            }
-                        }
+                        val blockName = "${group.displayName()} - $selectedCountry"
+                        exportMultipleGroups(
+                            blockName,
+                            proxiesToExport,
+                            "Отправляем ${proxiesToExport.size} прокси ($selectedCountry)..."
+                        )
                     }
                     .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+        }
+    }
+
+    private fun exportMultipleGroups(
+        blockName: String,
+        proxiesToExport: List<ProxyEntity>,
+        progressMessage: String
+    ) {
+        val progressDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Выгрузка на GitHub")
+            .setMessage(progressMessage)
+            .setCancelable(false)
+            .show()
+
+        runOnDefaultDispatcher {
+            val result = GitHubExporter.exportGroup(blockName, proxiesToExport)
+            runOnMainDispatcher {
+                progressDialog.dismiss()
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(if (result.success) "Успех!" else "Ошибка выгрузки")
+                    .setMessage(result.message)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
         }
