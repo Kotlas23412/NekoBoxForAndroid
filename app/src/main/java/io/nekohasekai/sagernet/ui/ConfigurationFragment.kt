@@ -727,116 +727,128 @@ class ConfigurationFragment @JvmOverloads constructor(
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("EXPERIMENTAL_API_USAGE")
     fun pingTest(icmpPing: Boolean) {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-            val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
-                if (icmpPing) {
-                    if (it.requireBean().canICMPing()) {
-                        return@filter true
+            try {
+                val profilesList = SagerDatabase.proxyDao.getByGroup(group.id).filter {
+                    if (icmpPing) {
+                        if (it.requireBean().canICMPing()) {
+                            return@filter true
+                        }
+                    } else {
+                        if (it.requireBean().canTCPing()) {
+                            return@filter true
+                        }
                     }
-                } else {
-                    if (it.requireBean().canTCPing()) {
-                        return@filter true
-                    }
+                    return@filter false
                 }
-                return@filter false
-            }
-            test.proxyN = profilesList.size
-            val profiles = ConcurrentLinkedQueue(profilesList)
-            repeat(DataStore.connectionTestConcurrent) {
-                testJobs.add(launch(Dispatchers.IO) {
-                    while (isActive) {
-                        val profile = profiles.poll() ?: break
+                test.proxyN = profilesList.size
+                val profiles = ConcurrentLinkedQueue(profilesList)
+                repeat(DataStore.connectionTestConcurrent) {
+                    testJobs.add(launch(Dispatchers.IO) {
+                        while (isActive) {
+                            val profile = profiles.poll() ?: break
 
-                        profile.status = 0
-                        var address = profile.requireBean().serverAddress
-                        if (!address.isIpAddress()) {
-                            try {
-                                SagerNet.underlyingNetwork!!.getAllByName(address).apply {
-                                    if (isNotEmpty()) {
-                                        address = this[0].hostAddress
-                                    }
-                                }
-                            } catch (ignored: UnknownHostException) {
-                            }
-                        }
-                        if (!isActive) break
-                        if (!address.isIpAddress()) {
-                            profile.status = 2
-                            profile.error = app.getString(R.string.connection_test_domain_not_found)
-                            test.update(profile)
-                            continue
-                        }
-                        try {
-                            if (icmpPing) {
-                                // removed
-                            } else {
-                                val socket =
-                                    SagerNet.underlyingNetwork?.socketFactory?.createSocket()
-                                        ?: Socket()
+                            profile.status = 0
+                            var address = profile.requireBean().serverAddress
+                            if (!address.isIpAddress()) {
                                 try {
-                                    socket.soTimeout = 3000
-                                    socket.bind(InetSocketAddress(0))
-                                    val start = SystemClock.elapsedRealtime()
-                                    socket.connect(
-                                        InetSocketAddress(
-                                            address, profile.requireBean().serverPort
-                                        ), 3000
-                                    )
-                                    if (!isActive) break
-                                    profile.status = 1
-                                    profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
-                                    test.update(profile)
-                                } finally {
-                                    socket.closeQuietly()
+                                    SagerNet.underlyingNetwork!!.getAllByName(address).apply {
+                                        if (isNotEmpty()) {
+                                            address = this[0].hostAddress
+                                        }
+                                    }
+                                } catch (ignored: UnknownHostException) {
                                 }
                             }
-                        } catch (e: Exception) {
                             if (!isActive) break
-                            val message = e.readableMessage
-
-                            if (icmpPing) {
+                            if (!address.isIpAddress()) {
                                 profile.status = 2
-                                profile.error = getString(R.string.connection_test_unreachable)
-                            } else {
-                                profile.status = 2
-                                when {
-                                    !message.contains("failed:") -> profile.error =
-                                        getString(R.string.connection_test_timeout)
+                                profile.error = app.getString(R.string.connection_test_domain_not_found)
+                                test.update(profile)
+                                continue
+                            }
+                            try {
+                                if (icmpPing) {
+                                    // removed
+                                } else {
+                                    val socket =
+                                        SagerNet.underlyingNetwork?.socketFactory?.createSocket()
+                                            ?: Socket()
+                                    try {
+                                        socket.soTimeout = 3000
+                                        socket.bind(InetSocketAddress(0))
+                                        val start = SystemClock.elapsedRealtime()
+                                        socket.connect(
+                                            InetSocketAddress(
+                                                address, profile.requireBean().serverPort
+                                            ), 3000
+                                        )
+                                        if (!isActive) break
+                                        profile.status = 1
+                                        profile.ping = (SystemClock.elapsedRealtime() - start).toInt()
+                                        test.update(profile)
+                                    } finally {
+                                        socket.closeQuietly()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                if (!isActive) break
+                                val message = e.readableMessage
 
-                                    else -> when {
-                                        message.contains("ECONNREFUSED") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_refused)
-                                        }
+                                if (icmpPing) {
+                                    profile.status = 2
+                                    profile.error = getString(R.string.connection_test_unreachable)
+                                } else {
+                                    profile.status = 2
+                                    when {
+                                        !message.contains("failed:") -> profile.error =
+                                            getString(R.string.connection_test_timeout)
 
-                                        message.contains("ENETUNREACH") -> {
-                                            profile.error =
-                                                getString(R.string.connection_test_unreachable)
-                                        }
+                                        else -> when {
+                                            message.contains("ECONNREFUSED") -> {
+                                                profile.error =
+                                                    getString(R.string.connection_test_refused)
+                                            }
 
-                                        else -> {
-                                            profile.status = 3
-                                            profile.error = message
+                                            message.contains("ENETUNREACH") -> {
+                                                profile.error =
+                                                    getString(R.string.connection_test_unreachable)
+                                            }
+
+                                            else -> {
+                                                profile.status = 3
+                                                profile.error = message
+                                            }
                                         }
                                     }
                                 }
+                                test.update(profile)
                             }
-                            test.update(profile)
                         }
-                    }
-                })
-            }
+                    })
+                }
 
-            testJobs.joinAll()
+                testJobs.joinAll()
 
-            runOnMainDispatcher {
-                test.cancel()
+                runOnMainDispatcher {
+                    test.cancel()
+                }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка теста: ${e.readableMessage}").show()
+                }
             }
         }
         test.cancel = {
@@ -868,14 +880,16 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun urlTest() {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
         val group = DataStore.currentGroup()
 
         val mainJob = runOnDefaultDispatcher {
-
             try {
                 val profilesList = SagerDatabase.proxyDao.getByGroup(group.id)
                 test.proxyN = profilesList.size
@@ -910,6 +924,14 @@ class ConfigurationFragment @JvmOverloads constructor(
             runOnMainDispatcher {
                 test.cancel()
             }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка теста: ${e.readableMessage}").show()
+                }
+            }
         }
         test.cancel = {
             test.dialogStatus.set(2)
@@ -940,7 +962,10 @@ class ConfigurationFragment @JvmOverloads constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun fullHttpsTest() {
-        if (DataStore.runningTest) return else DataStore.runningTest = true
+        if (DataStore.runningTest) {
+            snackbar("Тестирование уже запущено! Дождитесь окончания.").show()
+            return
+        } else DataStore.runningTest = true
         val test = TestDialog()
         val dialog = test.builder.show()
         val testJobs = mutableListOf<Job>()
@@ -989,6 +1014,14 @@ class ConfigurationFragment @JvmOverloads constructor(
 
             runOnMainDispatcher {
                 test.cancel()
+            }
+            } catch (e: Exception) {
+                Logs.w(e)
+                DataStore.runningTest = false
+                onMainDispatcher {
+                    if (dialog.isShowing) dialog.dismiss()
+                    snackbar("Ошибка HTTPS-теста: ${e.readableMessage}").show()
+                }
             }
         }
         test.cancel = {
